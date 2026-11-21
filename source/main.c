@@ -1,5 +1,5 @@
 /*
- * Katari v0.1 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9)
+ * Katari v0.1.1 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9)
  *   PSL1GHT + nucleo libretro Stella 2014
  *
  * Netplay: lockstep con retraso fijo (delay) sobre TCP, 2 jugadores.
@@ -70,7 +70,7 @@ int closesocket(int s);      /* definida en libnet, pero sin prototipo en las ca
  * Una v1.9.3 y una v1.9.4 se rechazan en el saludo en vez de desincronizarse. */
 /* v1.9.6: captura de pantalla con L2 (local, no toca la red): el protocolo NO cambia, 1vs1 = 7 y modo de 4 = 8 como en la v1.9.5. */
 /* Katari v0.1: protocolo propio, distinto del de NesNet (7/8): un Katari y un NesNet se rechazan en el saludo. */
-#define PROTO_VER      31
+#define PROTO_VER      33
 #define DEFAULT_PORT   7779        /* NesNet usa 7777 y SilverSky 7778: asi los tres conviven en la misma red */
 #define SCR_W          256
 #define SCR_H          240
@@ -88,7 +88,7 @@ int closesocket(int s);      /* definida en libnet, pero sin prototipo en las ca
 
 /* v1.8: el modo de 4 jugadores es una COPIA aparte del 1vs1 y habla otro protocolo, asi un host de 1vs1
  * nunca acepta a alguien del modo de 4 (ni al reves). Desde la v1.9.2: 1vs1 = 5, modo de 4 = 6. */
-#define PROTO_VER4     32
+#define PROTO_VER4     34
 
 /* FCEUmm define su "GAMEPAD" como subclase 1 del mando (RETRO_DEVICE_GAMEPAD en su libretro.c) */
 #define NES_DEV_GAMEPAD RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 1)
@@ -2270,7 +2270,7 @@ static void hr_head(const char *sub)
     hr_rect(70, 52, 82, 144, HC_RED, 256);
     x += hr_text(x, base, "KATA", FS_X, HC_WHITE, 4);
     x += hr_text(x, base, "RI", FS_X, HC_RED, 4);
-    hr_text(x + 16, base + 4, "v0.1", FS_S, HC_DIM, 2);
+    hr_text(x + 16, base + 4, "v0.1.1", FS_S, HC_DIM, 2);
     if (sub) hr_text(98, 172, sub, FS_M, HC_DIM, 2);
 }
 
@@ -5709,7 +5709,7 @@ static void ui_show(const char *l1, const char *l2, const char *l3)
         return;
     }
     ui_clear();
-    ui_center(20, "KATARI V0.1", 2, 0xFFFFD040);
+    ui_center(20, "KATARI V0.1.1", 2, 0xFFFFD040);
     if (l1) ui_center(90, l1, 1, 0xFFFFFFFF);
     if (l2) ui_center(110, l2, 1, 0xFFC0C0FF);
     if (l3) ui_center(130, l3, 1, 0xFFC0C0FF);
@@ -6926,7 +6926,7 @@ static int ui_menu(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.1", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         if (g_rom) {
             fit_name(nm, sizeof nm, g_rom_name, 34);
@@ -6984,7 +6984,7 @@ static int ui_menu4(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.1", 2, 0xFFFFD040);
         ui_center(46, "MULTIJUGADOR DE 4 (FOUR SCORE)", 1, 0xFFC0C0FF);
         ui_center(66, "HOST: MANDOS 1 Y 2", 1, 0xFF80FF80);
         ui_center(80, "EL QUE SE UNE: MANDOS 3 Y 4", 1, 0xFF80FF80);
@@ -7059,7 +7059,7 @@ static int ui_enter_code(char *out)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.1", 2, 0xFFFFD040);
         ui_center(60, "ESCRIBE EL CODIGO DEL HOST", 1, 0xFFFFFFFF);
         for (i = 0; i < 10; i++) {
             char c[2] = { (char)('0' + d[i]), 0 };
@@ -7165,7 +7165,7 @@ static int run_host_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.1", 2, 0xFFFFD040);
         ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -7316,7 +7316,7 @@ static int run_host4_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.1", 2, 0xFFFFD040);
         ui_center(64, "SALA DE 4 - TU CODIGO:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -7422,7 +7422,7 @@ static void app_prepare(const char *argv0)
         rename(p, q);                     /* conserva el log de la vez anterior */
         g_log = fopen(p, "w");
     }
-    logf_("Katari v0.1 (Atari 2600, nucleo Stella 2014; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
+    logf_("Katari v0.1.1 (Atari 2600, nucleo Stella 2014 sin la barra negra HMOVE; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
     cfg_load();
     logf_("config: res=%d render=%s zoom=%d audio=%s", g_cfg.res, g_cfg.render ? "cpu" : "gpu", g_cfg.zoom, g_cfg.audio ? "on" : "off");
     opts_load();                          /* v1.8.2: pantalla y mandos guardados en opciones.txt */
@@ -7560,7 +7560,7 @@ int main(int argc, char **argv)
         static const char *items[3] = { "CREAR SALA (HOST)", "UNIRSE A UNA SALA", "SOLO - 2 MANDOS" };
         int i;
         ui_clear();
-        ui_center(20, "KATARI V0.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.1", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         for (i = 0; i < 3; i++) {
             char line[40];
@@ -7573,7 +7573,7 @@ int main(int argc, char **argv)
             code_encode(((uint32_t)181 << 24) | (45u << 16) | (200u << 8) | 17u, 7777, code);
             if (hr_usable()) hr_room_screen("SALA DE 4 (HOST)", code, "puerto 7777", "UPNP: PUERTO ABIERTO", 0xFF80FF80u); else {
             ui_clear();
-            ui_center(20, "KATARI V0.1", 2, 0xFFFFD040);
+            ui_center(20, "KATARI V0.1.1", 2, 0xFFFFD040);
             ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
             { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
             ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
