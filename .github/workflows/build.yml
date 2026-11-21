@@ -1,1 +1,147 @@
+name: Build Katari
 
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STELLA_SHA: 7d1361e407e63f29e52892655069e5fb4096e691
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install gcc libelf-dev autoconf automake bison flex make texinfo patch wget zlib1g-dev libtool-bin bzip2 pkg-config libssl-dev p7zip-full
+
+      - name: Download PS3 SDK (ps3dev)
+        run: |
+          set -e
+          pick() {
+            gh api "repos/$1/releases?per_page=40" --jq '
+              [ .[] | select(.draft | not) | .assets[]?
+                | select(.name | test("ubuntu|linux"; "i"))
+                | select(.name | test("\\.tar\\.gz$"))
+                | select(.name | test("mac|osx|win|arm|aarch"; "i") | not) ]
+              | .[0].browser_download_url // empty'
+          }
+          for repo in ps3dev/ps3dev ps3dev/ps3toolchain; do
+            echo "=== releases de $repo"
+            gh api "repos/$repo/releases?per_page=15" --jq '.[] | "\(.tag_name) pre=\(.prerelease) :: \([.assets[].name] | join(", "))"' || true
+          done
+          URL=$(pick ps3dev/ps3dev)
+          FULL=1
+          if [ -z "$URL" ]; then
+            URL=$(pick ps3dev/ps3toolchain)
+            FULL=0
+          fi
+          if [ -z "$URL" ]; then
+            echo "::error::No encontre ningun SDK de PS3 precompilado para Linux"
+            exit 1
+          fi
+          echo "Descargando: $URL (sdk completo = $FULL)"
+          curl -fL --retry 3 "$URL" -o sdk.tar.gz
+          tar xzf sdk.tar.gz -C "$GITHUB_WORKSPACE"
+          echo "PS3DEV=$GITHUB_WORKSPACE/ps3dev" >> "$GITHUB_ENV"
+          echo "PSL1GHT=$GITHUB_WORKSPACE/ps3dev" >> "$GITHUB_ENV"
+          echo "PATH=$PATH:$GITHUB_WORKSPACE/ps3dev/bin:$GITHUB_WORKSPACE/ps3dev/ppu/bin:$GITHUB_WORKSPACE/ps3dev/spu/bin" >> "$GITHUB_ENV"
+          echo "SDK_FULL=$FULL" >> "$GITHUB_ENV"
+
+      - name: Build PSL1GHT (solo si el SDK descargado no lo trae)
+        run: |
+          set -e
+          if [ ! -f "$PSL1GHT/ppu_rules" ] || [ ! -f "$PS3DEV/ppu/lib/libnet.a" ]; then
+            echo "El SDK no trae PSL1GHT completo, lo compilo desde el codigo fuente"
+            git clone --depth 1 https://github.com/ps3dev/PSL1GHT.git psl1ght-src
+            cd psl1ght-src
+            make install-ctrl
+            make
+            make install
+          fi
+
+      - name: Comprobar SDK
+        run: |
+          echo "PS3DEV=$PS3DEV"
+          ls "$PS3DEV" | head -30
+          test -x "$PS3DEV/ppu/bin/ppu-gcc" || { echo "::error::Falta ppu-gcc"; exit 1; }
+          test -f "$PSL1GHT/ppu_rules"      || { echo "::error::Falta ppu_rules"; exit 1; }
+          test -f "$PS3DEV/ppu/lib/libnet.a" || { echo "::error::Falta libnet.a"; exit 1; }
+          ppu-gcc --version | head -1
+
+      - name: Compilar nucleo Stella 2014 (fijado a un commit probado)
+        run: |
+          set -e
+          mkdir stella2014
+          cd stella2014
+          git init -q
+          git remote add origin https://github.com/libretro/stella2014-libretro.git
+          git fetch --depth 1 origin "$STELLA_SHA"
+          git checkout -q FETCH_HEAD
+          # make -k: si hay errores salen TODOS juntos en un solo intento
+          set +e
+          make -k platform=psl1ght -j"$(nproc)" 2>&1 | tee ../core_build.log
+          set -e
+          grep -n "error" ../core_build.log | head -60 || true
+          ls -la stella2014_libretro_psl1ght.a
+
+      - name: Crear config.txt de ejemplo
+        run: |
+          mkdir -p data/USRDIR
+          cat > data/USRDIR/config.txt <<'CFG'
+          # Katari - configuracion
+          # rom: (sin uso normal) la ROM se elige en el menu ELEGIR ROM; las ROMs van en la carpeta roms/
+          rom=
+          # mode: se ignora (siempre arranca el menu)
+          mode=
+          # port: puerto TCP de la sala (el host debe tenerlo abierto). NesNet usa 7777, SilverSky 7778, Katari 7779
+          port=7779
+          # delay: 0 = automatico segun la latencia medida
+          delay=0
+          # public_ip: solo si Katari no logra averiguar tu IP publica (ejemplo: 181.45.200.17)
+          public_ip=
+          # code: codigo de sala para el cliente (si se deja vacio se escribe con el mando)
+          code=
+          # res: vacio = 720p (por defecto) | auto = la resolucion de tu TV
+          res=
+          # render: vacio = cpu (por defecto, dibujo directo sin la GPU) | gpu = usa la GPU (se colgo en las pruebas de NesNet; Katari tampoco la usa por defecto)
+          render=
+          # zoom: vacio = automatico (1, 2, 3 o 4)
+          zoom=
+          # audio: vacio = con sonido | off = sin sonido (tambien se apaga manteniendo R2 al abrir)
+          audio=
+          CFG
+          sed -i 's/^          //' data/USRDIR/config.txt
+          cat data/USRDIR/config.txt
+
+      - name: Diagnostico de librerias C++
+        run: |
+          echo "=== libstdc++ en el SDK"
+          ls -la "$PS3DEV"/ppu/lib/libstdc++* "$PS3DEV"/ppu/lib/libsupc++* 2>&1 | head || true
+          find "$PS3DEV" -name "libstdc++.a" -o -name "libsupc++.a" | head || true
+          echo "=== simbolos sysFs en libretro-common del nucleo"
+          nm -A stella2014/stella2014_libretro_psl1ght.a 2>/dev/null | grep -iE " U sysFs" | head -10 || true
+
+      - name: Compilar Katari
+        run: |
+          set +e
+          make -k -j"$(nproc)" pkg 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          grep -n "error" build.log | head -40 || true
+          test "$rc" = "0"
+          ls -la Katari*.pkg build/pkg/USRDIR/
+
+      - name: Guardar paquetes
+        uses: actions/upload-artifact@v4
+        with:
+          name: Katari
+          path: |
+            Katari.pkg
+            Katari.gnpdrm.pkg
+          if-no-files-found: error
