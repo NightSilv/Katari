@@ -1,5 +1,5 @@
 /*
- * Katari v0.1.2 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9)
+ * Katari v0.1.3 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9)
  *   PSL1GHT + nucleo libretro Stella 2014
  *
  * Netplay: lockstep con retraso fijo (delay) sobre TCP, 2 jugadores.
@@ -2270,7 +2270,7 @@ static void hr_head(const char *sub)
     hr_rect(70, 52, 82, 144, HC_RED, 256);
     x += hr_text(x, base, "KATA", FS_X, HC_WHITE, 4);
     x += hr_text(x, base, "RI", FS_X, HC_RED, 4);
-    hr_text(x + 16, base + 4, "v0.1.2", FS_S, HC_DIM, 2);
+    hr_text(x + 16, base + 4, "v0.1.3", FS_S, HC_DIM, 2);
     if (sub) hr_text(98, 172, sub, FS_M, HC_DIM, 2);
 }
 
@@ -3479,8 +3479,8 @@ static bool env_cb(unsigned cmd, void *data)
     }
 }
 
-/* Katari v0.1: el TIA entrega 160 x ~210 pixeles; el lienzo es de 256 x 240. Se escala con interpolacion bilineal
- * ENTERA (solo enteros: el hash de video del detector de desync tiene que salir igual en las dos consolas).
+/* Katari v0.1: el TIA entrega 160 x ~210 pixeles; el lienzo es de 256 x 240. Se escala con escalado de vecino mas cercano (v0.1.3; antes bilineal)
+ * ENTERO (solo enteros: el hash de video del detector de desync tiene que salir igual en las dos consolas).
  * Asi la imagen llena el lienzo y en la pantalla 4:3 queda con su proporcion real de 4:3. */
 static uint32_t g_hbuf[320][SCR_W];                      /* filas ya ensanchadas a 256 */
 static inline uint32_t kt_bl8(uint32_t a, uint32_t b, uint32_t f)   /* (a*(8-f) + b*f) / 8 por canal, f = 0..7 */
@@ -3502,7 +3502,7 @@ static void video_cb(const void *data, unsigned w, unsigned h, size_t pitch)
     if (w > 512) w = 512;
     if (h < 1) h = 1;
     if (h > 320) h = 320;
-    /* v0.1.2: deteccion automatica de la barra negra de HMOVE. Si en ESTE cuadro los 8 pixeles de la izquierda
+    /* v0.1.3: deteccion automatica de la barra negra de HMOVE. Si en ESTE cuadro los 8 pixeles de la izquierda
      * son negros en TODAS las lineas, se recortan (se escalan los 152 restantes). Si hay algo dibujado ahi, se
      * muestra el cuadro completo de 160 como siempre. Decide solo con el cuadro actual (sin estado), asi las dos
      * consolas hacen lo mismo y el hash de video sigue igual. */
@@ -3522,10 +3522,10 @@ static void video_cb(const void *data, unsigned w, unsigned h, size_t pitch)
     }
     cw = w - off;
     for (x = 0; x < SCR_W; x++) {
-        unsigned pos = (x * cw * 8u) / SCR_W;
-        i0[x] = off + (pos >> 3);
-        fx[x] = pos & 7u;
-        i1[x] = (i0[x] + 1 < w) ? i0[x] + 1 : w - 1;
+        /* v0.1.3: vecino mas cercano (nitido, sin mezclar pixeles); solo enteros */
+        i0[x] = off + (x * cw) / SCR_W;
+        fx[x] = 0;
+        i1[x] = i0[x];
     }
     for (y = 0; y < h; y++) {
         const uint8_t *row = (const uint8_t *)data + y * pitch;
@@ -3544,8 +3544,7 @@ static void video_cb(const void *data, unsigned w, unsigned h, size_t pitch)
         for (x = 0; x < SCR_W; x++) g_hbuf[y][x] = kt_bl8(src[i0[x]], src[i1[x]], fx[x]);
     }
     for (y = 0; y < SCR_H; y++) {
-        unsigned pos = (y * h * 8u) / SCR_H;
-        unsigned r0 = pos >> 3, fv = pos & 7u, r1 = (r0 + 1 < h) ? r0 + 1 : h - 1;
+        unsigned r0 = (y * h) / SCR_H, fv = 0, r1 = r0;
         uint32_t *dst = &g_fb[y * SCR_W];
         const uint32_t *ra = g_hbuf[r0], *rb2 = g_hbuf[r1];
         if (fv == 0) { for (x = 0; x < SCR_W; x++) dst[x] = ra[x]; }
@@ -5728,7 +5727,7 @@ static void ui_show(const char *l1, const char *l2, const char *l3)
         return;
     }
     ui_clear();
-    ui_center(20, "KATARI V0.1.2", 2, 0xFFFFD040);
+    ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
     if (l1) ui_center(90, l1, 1, 0xFFFFFFFF);
     if (l2) ui_center(110, l2, 1, 0xFFC0C0FF);
     if (l3) ui_center(130, l3, 1, 0xFFC0C0FF);
@@ -6945,7 +6944,7 @@ static int ui_menu(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1.2", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         if (g_rom) {
             fit_name(nm, sizeof nm, g_rom_name, 34);
@@ -7003,7 +7002,7 @@ static int ui_menu4(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1.2", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
         ui_center(46, "MULTIJUGADOR DE 4 (FOUR SCORE)", 1, 0xFFC0C0FF);
         ui_center(66, "HOST: MANDOS 1 Y 2", 1, 0xFF80FF80);
         ui_center(80, "EL QUE SE UNE: MANDOS 3 Y 4", 1, 0xFF80FF80);
@@ -7078,7 +7077,7 @@ static int ui_enter_code(char *out)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1.2", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
         ui_center(60, "ESCRIBE EL CODIGO DEL HOST", 1, 0xFFFFFFFF);
         for (i = 0; i < 10; i++) {
             char c[2] = { (char)('0' + d[i]), 0 };
@@ -7184,7 +7183,7 @@ static int run_host_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.1.2", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
         ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -7335,7 +7334,7 @@ static int run_host4_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.1.2", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
         ui_center(64, "SALA DE 4 - TU CODIGO:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -7441,7 +7440,7 @@ static void app_prepare(const char *argv0)
         rename(p, q);                     /* conserva el log de la vez anterior */
         g_log = fopen(p, "w");
     }
-    logf_("Katari v0.1.2 (Atari 2600, nucleo Stella 2014 con recorte automatico de la barra negra HMOVE; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
+    logf_("Katari v0.1.3 (Atari 2600, nucleo Stella 2014 con recorte automatico de la barra negra HMOVE; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
     cfg_load();
     logf_("config: res=%d render=%s zoom=%d audio=%s", g_cfg.res, g_cfg.render ? "cpu" : "gpu", g_cfg.zoom, g_cfg.audio ? "on" : "off");
     opts_load();                          /* v1.8.2: pantalla y mandos guardados en opciones.txt */
@@ -7579,7 +7578,7 @@ int main(int argc, char **argv)
         static const char *items[3] = { "CREAR SALA (HOST)", "UNIRSE A UNA SALA", "SOLO - 2 MANDOS" };
         int i;
         ui_clear();
-        ui_center(20, "KATARI V0.1.2", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         for (i = 0; i < 3; i++) {
             char line[40];
@@ -7592,7 +7591,7 @@ int main(int argc, char **argv)
             code_encode(((uint32_t)181 << 24) | (45u << 16) | (200u << 8) | 17u, 7777, code);
             if (hr_usable()) hr_room_screen("SALA DE 4 (HOST)", code, "puerto 7777", "UPNP: PUERTO ABIERTO", 0xFF80FF80u); else {
             ui_clear();
-            ui_center(20, "KATARI V0.1.2", 2, 0xFFFFD040);
+            ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
             ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
             { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
             ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
