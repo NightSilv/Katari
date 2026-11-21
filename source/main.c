@@ -1,5 +1,5 @@
 /*
- * Katari v0.1.3 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9)
+ * Katari v0.1.4 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9)
  *   PSL1GHT + nucleo libretro Stella 2014
  *
  * Netplay: lockstep con retraso fijo (delay) sobre TCP, 2 jugadores.
@@ -269,7 +269,6 @@ static void cfg_load(void)
 }
 
 /* Katari: el nucleo Stella ya trae libretro-common completo (file_stream, file_path...), no hacen falta shims. */
-bool path_is_valid(const char *path);
 
 /* ------------------------------------------------------------------ */
 /* Fuente 5x7 (ASCII 32..90) y dibujo de texto en el lienzo            */
@@ -2270,7 +2269,7 @@ static void hr_head(const char *sub)
     hr_rect(70, 52, 82, 144, HC_RED, 256);
     x += hr_text(x, base, "KATA", FS_X, HC_WHITE, 4);
     x += hr_text(x, base, "RI", FS_X, HC_RED, 4);
-    hr_text(x + 16, base + 4, "v0.1.3", FS_S, HC_DIM, 2);
+    hr_text(x + 16, base + 4, "v0.1.4", FS_S, HC_DIM, 2);
     if (sub) hr_text(98, 172, sub, FS_M, HC_DIM, 2);
 }
 
@@ -3479,7 +3478,7 @@ static bool env_cb(unsigned cmd, void *data)
     }
 }
 
-/* Katari v0.1: el TIA entrega 160 x ~210 pixeles; el lienzo es de 256 x 240. Se escala con escalado de vecino mas cercano (v0.1.3; antes bilineal)
+/* Katari v0.1: el TIA entrega 160 x ~210 pixeles; el lienzo es de 256 x 240. Se escala con escalado de vecino mas cercano (v0.1.4; antes bilineal)
  * ENTERO (solo enteros: el hash de video del detector de desync tiene que salir igual en las dos consolas).
  * Asi la imagen llena el lienzo y en la pantalla 4:3 queda con su proporcion real de 4:3. */
 static uint32_t g_hbuf[320][SCR_W];                      /* filas ya ensanchadas a 256 */
@@ -3502,7 +3501,7 @@ static void video_cb(const void *data, unsigned w, unsigned h, size_t pitch)
     if (w > 512) w = 512;
     if (h < 1) h = 1;
     if (h > 320) h = 320;
-    /* v0.1.3: deteccion automatica de la barra negra de HMOVE. Si en ESTE cuadro los 8 pixeles de la izquierda
+    /* v0.1.4: deteccion automatica de la barra negra de HMOVE. Si en ESTE cuadro los 8 pixeles de la izquierda
      * son negros en TODAS las lineas, se recortan (se escalan los 152 restantes). Si hay algo dibujado ahi, se
      * muestra el cuadro completo de 160 como siempre. Decide solo con el cuadro actual (sin estado), asi las dos
      * consolas hacen lo mismo y el hash de video sigue igual. */
@@ -3522,7 +3521,7 @@ static void video_cb(const void *data, unsigned w, unsigned h, size_t pitch)
     }
     cw = w - off;
     for (x = 0; x < SCR_W; x++) {
-        /* v0.1.3: vecino mas cercano (nitido, sin mezclar pixeles); solo enteros */
+        /* v0.1.4: vecino mas cercano (nitido, sin mezclar pixeles); solo enteros */
         i0[x] = off + (x * cw) / SCR_W;
         fx[x] = 0;
         i1[x] = i0[x];
@@ -3926,6 +3925,15 @@ static int state_read(int slot, uint8_t **buf, size_t *n)
 /* ------------------------------------------------------------------ */
 static void shot_geometry(int *dw, int *dh, int *z);
 
+/* v0.1.4: comprobar si un archivo existe con fopen (la copia propia de NesNet, probada en PS3); ya no se usa path_is_valid del nucleo Stella */
+static int kt_exists(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
 static uint32_t g_png_tab[256];
 static int      g_png_tab_ok;
 
@@ -4026,11 +4034,14 @@ static int shot_take(const uint32_t *fb)
     int dw = 1280, dh = 720, z = 3, mode, n, w = 0, h = 0, k = 0;
     uint32_t t0 = now_ms();
     size_t len, dot, j;
+    logf_("captura: 1 inicio");
     shot_geometry(&dw, &dh, &z);
     (void)dh;
     mode = g_cfg.render ? g_screen : 0;       /* con el dibujo por GPU la pantalla siempre es ORIGINAL */
     snprintf(dir, sizeof dir, "%s/screenshots", g_dir);
+    logf_("captura: 2 carpeta %s", dir);
     mkdir(dir, 0777);
+    logf_("captura: 3 carpeta lista");
     /* nombre: la ROM sin extension; solo letras, numeros, - y _ (lo demas pasa a _) */
     len = strlen(g_rom_name);
     dot = len;
@@ -4045,11 +4056,13 @@ static int shot_take(const uint32_t *fb)
     if (strcmp(base, g_shot_last)) { snprintf(g_shot_last, sizeof g_shot_last, "%s", base); g_shot_n = 0; }
     for (n = g_shot_n + 1; n < 10000; n++) {
         snprintf(path, sizeof path, "%s/%s_%04d.png", dir, base, n);
-        if (!path_is_valid(path)) break;
+        if (!kt_exists(path)) break;
     }
     if (n >= 10000) { logf_("AVISO: captura: ya hay 9999 capturas de este juego"); return 0; }
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    logf_("captura: 4 escribiendo %s", tmp);
     if (!shot_write_png(tmp, fb, mode, dw, z, &w, &h)) { logf_("AVISO: captura: no pude escribir %s (errno=%d)", tmp, errno); return 0; }
+    logf_("captura: 5 renombrando");
     remove(path);
     if (rename(tmp, path) != 0) { logf_("AVISO: captura: no pude renombrar (queda %s)", tmp); return 0; }
     g_shot_n = n;
@@ -5727,7 +5740,7 @@ static void ui_show(const char *l1, const char *l2, const char *l3)
         return;
     }
     ui_clear();
-    ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
+    ui_center(20, "KATARI V0.1.4", 2, 0xFFFFD040);
     if (l1) ui_center(90, l1, 1, 0xFFFFFFFF);
     if (l2) ui_center(110, l2, 1, 0xFFC0C0FF);
     if (l3) ui_center(130, l3, 1, 0xFFC0C0FF);
@@ -6944,7 +6957,7 @@ static int ui_menu(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.4", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         if (g_rom) {
             fit_name(nm, sizeof nm, g_rom_name, 34);
@@ -7002,7 +7015,7 @@ static int ui_menu4(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.4", 2, 0xFFFFD040);
         ui_center(46, "MULTIJUGADOR DE 4 (FOUR SCORE)", 1, 0xFFC0C0FF);
         ui_center(66, "HOST: MANDOS 1 Y 2", 1, 0xFF80FF80);
         ui_center(80, "EL QUE SE UNE: MANDOS 3 Y 4", 1, 0xFF80FF80);
@@ -7077,7 +7090,7 @@ static int ui_enter_code(char *out)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.4", 2, 0xFFFFD040);
         ui_center(60, "ESCRIBE EL CODIGO DEL HOST", 1, 0xFFFFFFFF);
         for (i = 0; i < 10; i++) {
             char c[2] = { (char)('0' + d[i]), 0 };
@@ -7183,7 +7196,7 @@ static int run_host_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.4", 2, 0xFFFFD040);
         ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -7334,7 +7347,7 @@ static int run_host4_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.4", 2, 0xFFFFD040);
         ui_center(64, "SALA DE 4 - TU CODIGO:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -7440,7 +7453,7 @@ static void app_prepare(const char *argv0)
         rename(p, q);                     /* conserva el log de la vez anterior */
         g_log = fopen(p, "w");
     }
-    logf_("Katari v0.1.3 (Atari 2600, nucleo Stella 2014 con recorte automatico de la barra negra HMOVE; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
+    logf_("Katari v0.1.4 (Atari 2600, nucleo Stella 2014 con recorte automatico de la barra negra HMOVE; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
     cfg_load();
     logf_("config: res=%d render=%s zoom=%d audio=%s", g_cfg.res, g_cfg.render ? "cpu" : "gpu", g_cfg.zoom, g_cfg.audio ? "on" : "off");
     opts_load();                          /* v1.8.2: pantalla y mandos guardados en opciones.txt */
@@ -7578,7 +7591,7 @@ int main(int argc, char **argv)
         static const char *items[3] = { "CREAR SALA (HOST)", "UNIRSE A UNA SALA", "SOLO - 2 MANDOS" };
         int i;
         ui_clear();
-        ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.1.4", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         for (i = 0; i < 3; i++) {
             char line[40];
@@ -7591,7 +7604,7 @@ int main(int argc, char **argv)
             code_encode(((uint32_t)181 << 24) | (45u << 16) | (200u << 8) | 17u, 7777, code);
             if (hr_usable()) hr_room_screen("SALA DE 4 (HOST)", code, "puerto 7777", "UPNP: PUERTO ABIERTO", 0xFF80FF80u); else {
             ui_clear();
-            ui_center(20, "KATARI V0.1.3", 2, 0xFFFFD040);
+            ui_center(20, "KATARI V0.1.4", 2, 0xFFFFD040);
             ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
             { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
             ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -7995,12 +8008,12 @@ int main(int argc, char **argv)
             snprintf(g_rom_name, sizeof g_rom_name, "Super Mario Bros. 3 (USA) [!].nes");
             if (shot_take(fbuf) != 3) bad++;                                       /* vuelve a la primera ROM: sigue en 0003 */
             snprintf(p2, sizeof p2, "%s/screenshots/Super_Mario_Bros__3__USA______0003.png", nd);
-            if (n1 != 1 || n2 != 2 || n3 != 1 || !path_is_valid(p2)) { bad++; printf("shottest: numeracion/nombres MAL (%d %d %d) %s\n", n1, n2, n3, p2); }
+            if (n1 != 1 || n2 != 2 || n3 != 1 || !kt_exists(p2)) { bad++; printf("shottest: numeracion/nombres MAL (%d %d %d) %s\n", n1, n2, n3, p2); }
             else printf("shottest nombres OK: %s\n", p2);
             g_rom_name[0] = 0;
             if (shot_take(fbuf) != 1) bad++;
             snprintf(p2, sizeof p2, "%s/screenshots/captura_0001.png", nd);
-            if (!path_is_valid(p2)) { bad++; printf("shottest: sin nombre de ROM deberia ser captura_0001.png\n"); }
+            if (!kt_exists(p2)) { bad++; printf("shottest: sin nombre de ROM deberia ser captura_0001.png\n"); }
         }
         printf("shottest TOTAL bad=%u\n", bad);
         return bad != 0;
