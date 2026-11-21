@@ -83,6 +83,10 @@ jobs:
           git remote add origin https://github.com/libretro/stella2014-libretro.git
           git fetch --depth 1 origin "$STELLA_SHA"
           git checkout -q FETCH_HEAD
+          # Katari v0.1.1: sin la barra negra de 8 pixeles a la izquierda (HMOVE blank, ej. Frostbite). Se apaga el blanqueo del TIA.
+          test "$(grep -c 'myAllowHMOVEBlanks = true;' stella/src/emucore/TIA.cxx)" = "2" || { echo "::error::TIA.cxx no tiene las 2 lineas esperadas"; exit 1; }
+          sed -i 's/myAllowHMOVEBlanks = true;/myAllowHMOVEBlanks = false;/' stella/src/emucore/TIA.cxx
+          grep -n 'myAllowHMOVEBlanks = ' stella/src/emucore/TIA.cxx
           # make -k: si hay errores salen TODOS juntos en un solo intento
           set +e
           make -k platform=psl1ght -j"$(nproc)" 2>&1 | tee ../core_build.log
