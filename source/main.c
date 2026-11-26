@@ -1,5 +1,5 @@
 /*
- * Katari v0.2.0 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9; menus nuevos con fondo de madera)
+ * Katari v0.2.1 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9; menus nuevos con fondo de madera)
  *   PSL1GHT + nucleo libretro Stella 2014
  *
  * Netplay: lockstep con retraso fijo (delay) sobre TCP, 2 jugadores.
@@ -316,7 +316,7 @@ static const uint8_t font5x7[59][5] = {
 #define HC_YEL   0xFFFFE246u
 #define HC_MUTE  0xFF6E7CAAu
 #define HC_SHAD  0xFF02040Eu
-/* ---- Katari v0.2.0: fuentes Archivo Black (titulos) y Fira Sans (texto), licencia OFL, 11 tamanos, alfa de 4 bits, generadas fuera de la PS3 ---- */
+/* ---- Katari v0.2.1: fuentes Archivo Black (titulos) y Fira Sans (texto), licencia OFL, 11 tamanos, alfa de 4 bits, generadas fuera de la PS3 ---- */
 typedef struct { uint16_t cp; uint8_t adv; int8_t bx, by; uint8_t w, h; uint32_t off; } FGlyph;
 enum { FS_S, FS_M, FS_L, FS_V, FS_B, FS_T, FS_R, FS_H, FS_Q, FS_C, FS_X, FS_N };
 static const int fg_asc[FS_N] = { 16, 18, 21, 25, 18, 22, 27, 41, 46, 57, 65 };
@@ -2628,7 +2628,7 @@ static void hr_b64(void)
     }
 }
 
-/* ---- Katari v0.2.0: fondo de MADERA veteada (como la caja de la consola) armado una sola vez ---- */
+/* ---- Katari v0.2.1: fondo de MADERA veteada (como la caja de la consola) armado una sola vez ---- */
 static void hr_make_bg(void)
 {
     static float rt[1024];                      /* anillos de la veta: (sin * 0.5 + 0.5) ^ 2.6 */
@@ -2990,7 +2990,7 @@ static void kt_head(const char *title, const char *sub, const char *sub2)
     if (sub2) hr_tt(68, 256, sub2, FS_S, KT_MUT);
 }
 
-static void kt_ver(void) { hr_tt(72, 598, "versión 0.2.0", FS_S, 0xFF827660u); }
+static void kt_ver(void) { hr_tt(72, 598, "versión 0.2.1", FS_S, 0xFF827660u); }
 
 /* interruptor deslizable (adorno de las filas y de la placa de info) */
 static void kt_switch(int sx, int sy, int w, int h, int on, int sel)
@@ -4423,6 +4423,90 @@ static int read_whole_file(const char *path, uint8_t **buf, size_t *size)
     return 1;
 }
 
+static int ci_inflate(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen);     /* definido mas abajo (lector de PNG) */
+
+/* ---- v0.2.1: ROMs dentro de un .zip. Se usa la primera entrada .a26 / .bin / .rom (sin cifrar, guardada o deflate). ---- */
+static uint32_t zp_u16(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8); }
+static uint32_t zp_u32(const uint8_t *p) { return zp_u16(p) | (zp_u16(p + 2) << 16); }
+static int zp_rom_ext(const char *n, size_t len)
+{
+    const char *e;
+    if (len < 5) return 0;
+    e = n + len - 4;
+    if (e[0] != '.') return 0;
+    return (tolower((unsigned char)e[1]) == 'a' && e[2] == '2' && e[3] == '6') ||
+           (tolower((unsigned char)e[1]) == 'b' && tolower((unsigned char)e[2]) == 'i' && tolower((unsigned char)e[3]) == 'n') ||
+           (tolower((unsigned char)e[1]) == 'r' && tolower((unsigned char)e[2]) == 'o' && tolower((unsigned char)e[3]) == 'm');
+}
+/* busca la entrada de la ROM; devuelve 1 y deja el tamano sin comprimir, el CRC32 y la posicion de sus datos */
+static int zip_find(const uint8_t *z, size_t n, size_t *dpos, size_t *csize, size_t *usize, int *method, uint32_t *crc, char *inner, size_t icap)
+{
+    size_t i, lo, cdo, cdn, p;
+    uint32_t cnt, k;
+    if (n < 22) return 0;
+    lo = n > 65557 ? n - 65557 : 0;
+    for (i = n - 22 + 1; i-- > lo; ) if (zp_u32(z + i) == 0x06054b50u) break;
+    if (i + 1 == lo || zp_u32(z + i) != 0x06054b50u) return 0;
+    cnt = zp_u16(z + i + 10); cdn = zp_u32(z + i + 12); cdo = zp_u32(z + i + 16);
+    (void)cdn;
+    p = cdo;
+    for (k = 0; k < cnt; k++) {
+        uint32_t flags, meth, comp, unc, nl, el, cl, lho, c32;
+        size_t lp, ldn, lde;
+        if (p + 46 > n || zp_u32(z + p) != 0x02014b50u) return 0;
+        flags = zp_u16(z + p + 8); meth = zp_u16(z + p + 10); c32 = zp_u32(z + p + 16);
+        comp = zp_u32(z + p + 20); unc = zp_u32(z + p + 24);
+        nl = zp_u16(z + p + 28); el = zp_u16(z + p + 30); cl = zp_u16(z + p + 32); lho = zp_u32(z + p + 42);
+        if (p + 46 + nl > n) return 0;
+        if (!(flags & 1) && (meth == 0 || meth == 8) && unc >= 2048 && unc <= 512 * 1024 && zp_rom_ext((const char *)z + p + 46, nl) && (!inner || nl < icap)) {
+            if ((size_t)lho + 30 > n || zp_u32(z + lho) != 0x04034b50u) return 0;
+            ldn = zp_u16(z + lho + 26); lde = zp_u16(z + lho + 28);
+            *dpos = (size_t)lho + 30 + ldn + lde;
+            if (*dpos + comp > n) return 0;
+            *csize = comp; *usize = unc; *method = (int)meth; *crc = c32;
+            if (inner) {
+                const char *nm = (const char *)z + p + 46;
+                size_t b = nl;
+                while (b > 0 && nm[b - 1] != '/' && nm[b - 1] != '\\') b--;
+                memcpy(inner, nm + b, nl - b); inner[nl - b] = 0;
+            }
+            return 1;
+        }
+        p += 46 + nl + el + cl;
+    }
+    return 0;
+}
+static uint32_t crc32_buf(const uint8_t *b, size_t n);
+static int path_is_zip(const char *path)
+{
+    size_t n = strlen(path);
+    return n > 4 && path[n - 4] == '.' && tolower((unsigned char)path[n - 3]) == 'z' && tolower((unsigned char)path[n - 2]) == 'i' && tolower((unsigned char)path[n - 1]) == 'p';
+}
+/* lee una ROM: archivo normal o la ROM de dentro de un .zip. inner (opcional) recibe el nombre del archivo de dentro. */
+static int read_rom_file(const char *path, uint8_t **buf, size_t *size, char *inner, size_t icap)
+{
+    uint8_t *z = NULL, *out;
+    size_t zn = 0, dpos, cs, us;
+    int meth, ok = 0;
+    uint32_t c32;
+    char nm[300];
+    if (inner && icap) inner[0] = 0;
+    if (!path_is_zip(path)) return read_whole_file(path, buf, size);
+    if (!read_whole_file(path, &z, &zn)) return 0;
+    if (zn > 8u * 1024 * 1024 || !zip_find(z, zn, &dpos, &cs, &us, &meth, &c32, nm, sizeof nm)) { free(z); return 0; }
+    out = (uint8_t *)malloc(us);
+    if (out) {
+        if (meth == 0) { if (cs == us) { memcpy(out, z + dpos, us); ok = 1; } }
+        else ok = (ci_inflate(z + dpos, cs, out, us) == 0);
+        if (ok && crc32_buf(out, us) != c32) ok = 0;
+    }
+    free(z);
+    if (!ok) { free(out); return 0; }
+    *buf = out; *size = us;
+    if (inner && icap) snprintf(inner, icap, "%s", nm);
+    return 1;
+}
+
 /* ------------------------------------------------------------------ */
 /* Selector de ROMs (v1.7): USRDIR/roms/, reconocidas por su cabecera  */
 /* ------------------------------------------------------------------ */
@@ -4452,8 +4536,9 @@ static int is_nes_file(const char *path)
     struct stat st;
     const char *e = strrchr(path, '.');
     if (!e) return 0;
-    if (name_cmp(e, ".a26") != 0 && name_cmp(e, ".bin") != 0 && name_cmp(e, ".rom") != 0) return 0;
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return 0;
+    if (path_is_zip(path)) return st.st_size >= 100 && st.st_size <= 8 * 1024 * 1024;       /* v0.2.1: .zip con una ROM dentro */
+    if (name_cmp(e, ".a26") != 0 && name_cmp(e, ".bin") != 0 && name_cmp(e, ".rom") != 0) return 0;
     if (st.st_size < 2 * 1024 || st.st_size > 512 * 1024) return 0;
     return 1;
 }
@@ -4479,6 +4564,18 @@ static void roms_scan(void)
             g_roms[g_nroms].size = stat(path, &st) == 0 ? (uint32_t)st.st_size : 0;
             g_roms[g_nroms].crc = 0;
             g_roms[g_nroms].has_crc = 0;
+            if (path_is_zip(path)) {              /* el tamano que se muestra y se compara es el de la ROM de dentro */
+                uint8_t *zb = NULL;
+                size_t zn = 0, dp, cs, us;
+                int me;
+                uint32_t c32;
+                int okz = 0;
+                if (read_whole_file(path, &zb, &zn)) {
+                    if (zip_find(zb, zn, &dp, &cs, &us, &me, &c32, NULL, 0)) { g_roms[g_nroms].size = (uint32_t)us; okz = 1; }
+                    free(zb);
+                }
+                if (!okz) continue;               /* .zip sin ROM de Atari dentro: no se lista */
+            }
         }
         g_nroms++;
     }
@@ -4493,13 +4590,15 @@ static int rom_load(int idx)
     char path[420];
     uint8_t *buf = NULL;
     size_t sz = 0;
+    char inner[300];
     snprintf(path, sizeof path, "%s/roms/%s", g_dir, g_roms[idx].name);
-    if (!read_whole_file(path, &buf, &sz)) { logf_("roms: no pude leer %s", path); return 0; }
+    if (!read_rom_file(path, &buf, &sz, inner, sizeof inner)) { logf_("roms: no pude leer %s", path); return 0; }
     free(g_rom);
     g_rom = buf;
     g_romsz = sz;
     g_romcrc = crc32_buf(g_rom, g_romsz);
-    snprintf(g_cfg.rom, sizeof g_cfg.rom, "%s", path);
+    if (inner[0]) { snprintf(g_cfg.rom, sizeof g_cfg.rom, "%s/roms/%s", g_dir, inner); logf_("roms: ROM dentro del zip: %s", inner); }
+    else snprintf(g_cfg.rom, sizeof g_cfg.rom, "%s", path);
     snprintf(g_rom_name, sizeof g_rom_name, "%s", g_roms[idx].name);
     logf_("ROM elegida: %s  %u bytes  crc32=%08X", g_rom_name, (unsigned)g_romsz, (unsigned)g_romcrc);
     return 1;
@@ -5636,14 +5735,26 @@ static uint32_t g_maxframes;              /* 0 = sin limite (solo la version de 
 static int      g_desyncs;
 static uint32_t g_first_desync;
 
+/* v0.2.1: al cerrar el menu R3 (p. ej. la X de "si, cargar estado"), los BOTONES que sigan apretados no llegan al juego hasta
+ * soltarlos (si no, el personaje salta al volver). Las flechas no se bloquean. Es solo entrada local: la red no cambia. */
+static uint16_t g_swallow[2];
+static int      g_swallow_arm;             /* bit 0 = mando 1, bit 1 = mando 2: armar en la proxima lectura */
+static uint16_t swallow_filter(int port, uint16_t b)
+{
+    int p = port ? 1 : 0;
+    if (g_swallow_arm & (1 << p)) { g_swallow[p] = (uint16_t)(b & ~(NB_UP | NB_DOWN | NB_LEFT | NB_RIGHT)); g_swallow_arm &= ~(1 << p); }
+    g_swallow[p] &= b;
+    return (uint16_t)(b & ~g_swallow[p]);
+}
+
 static uint16_t local_bits(int port, int slot, uint32_t frame)
 {
 #ifdef NESNET_HOST
     (void)port;
-    return script_input(slot, frame);
+    return swallow_filter(slot, script_input(slot, frame));
 #else
     (void)slot; (void)frame;
-    return pad_nes_bits(port);
+    return swallow_filter(port, pad_nes_bits(port));
 #endif
 }
 
@@ -5706,7 +5817,14 @@ enum { MK_CONT, MK_SAVE, MK_LOAD, MK_GAME, MK_RESET, MK_EXIT };
  *   v1.9.4: el HOST en online tiene tambien GUARDAR ESTADO / CARGAR ESTADO (6 ranuras, las mismas que en SOLO); el invitado no.
  * Reiniciar, salir, cargar y sobreescribir piden confirmar con X.
  * Devuelve 0 = seguir jugando, 1 = salir, 2 = reiniciar, 3 = cambiar de juego, 10+n = guardar en la ranura n, 20+n = cargar la ranura n (n = 0..STATE_SLOTS-1). */
+static int solo_menu_inner(int online, int host);
 static int solo_menu(int online, int host)
+{
+    int r = solo_menu_inner(online, host);
+    g_swallow_arm = 3;                      /* v0.2.1: al cerrar el menu, los botones que sigan apretados no llegan al juego */
+    return r;
+}
+static int solo_menu_inner(int online, int host)
 {
     int kinds[6], nk = 0, sel = 0, r = -1, confirm = -1, x, y, i;
     int st = !online || host;                 /* v1.9.4: online, solo el HOST ve guardar/cargar estado */
@@ -5951,7 +6069,7 @@ static int rom_find_crc(uint32_t crc, uint32_t size, char *name_out)
         uint32_t c;
         if (g_roms[i].size != size) continue;
         snprintf(rp, sizeof rp, "%s/roms/%s", g_dir, g_roms[i].name);
-        if (!read_whole_file(rp, &b, &bs)) continue;
+        if (!read_rom_file(rp, &b, &bs, NULL, 0)) continue;
         c = crc32_buf(b, bs);
         free(b);
         if (c == crc && bs == size) { snprintf(name_out, ROM_NAMELEN, "%s", g_roms[i].name); return 1; }
@@ -6587,7 +6705,7 @@ static void ui_show(const char *l1, const char *l2, const char *l3)
         return;
     }
     ui_clear();
-    ui_center(20, "KATARI V0.2.0", 2, 0xFFFFD040);
+    ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
     if (l1) ui_center(90, l1, 1, 0xFFFFFFFF);
     if (l2) ui_center(110, l2, 1, 0xFFC0C0FF);
     if (l3) ui_center(130, l3, 1, 0xFFC0C0FF);
@@ -7070,6 +7188,7 @@ static int cv_ceq(const char *a, const char *b, size_t n)     /* n caracteres ig
 static size_t rom_base_len(const char *name)
 {
     size_t n = strlen(name);
+    if (n > 4 && name[n - 4] == '.' && cv_ceq(name + n - 3, "zip", 3)) n -= 4;                 /* v0.2.1: "Juego.zip" / "Juego.a26.zip" */
     if (n > 4 && name[n - 4] == '.' && (cv_ceq(name + n - 3, "a26", 3) || cv_ceq(name + n - 3, "bin", 3) || cv_ceq(name + n - 3, "rom", 3))) return n - 4;
     return n;
 }
@@ -7192,7 +7311,7 @@ static int ui_rom_select(int pick_only)
                 size_t bs = 0;
                 char rp[420];
                 snprintf(rp, sizeof rp, "%s/roms/%s", g_dir, g_roms[sel].name);
-                if (read_whole_file(rp, &b, &bs)) {
+                if (read_rom_file(rp, &b, &bs, NULL, 0)) {
                     g_pick_crc = crc32_buf(b, bs); g_pick_size = (uint32_t)bs;
                     snprintf(g_pick_name, sizeof g_pick_name, "%s", g_roms[sel].name);
                     free(b);
@@ -7219,7 +7338,7 @@ static int ui_rom_select(int pick_only)
                 size_t bs = 0;
                 char rp[420];
                 snprintf(rp, sizeof rp, "%s/roms/%s", g_dir, g_roms[sel].name);
-                if (read_whole_file(rp, &b, &bs)) { g_roms[sel].crc = crc32_buf(b, bs); g_roms[sel].has_crc = 1; free(b); }
+                if (read_rom_file(rp, &b, &bs, NULL, 0)) { g_roms[sel].crc = crc32_buf(b, bs); g_roms[sel].has_crc = 1; free(b); }
             }
         }
         if (hr_usable()) {
@@ -7233,7 +7352,7 @@ static int ui_rom_select(int pick_only)
                 hr_tcm(855, 250, "NO HAY ROMS EN LA CARPETA:", FS_R, KT_AMB);
                 hr_tcm(855, 310, "KATA00001/USRDIR/roms", FS_L, KT_CREAM);
                 hr_tcm(855, 370, "Pon ahí tus ROMs de Atari 2600", FS_M, KT_MUT);
-                hr_tcm(855, 402, "(.a26 o .bin) y vuelve a entrar aquí.", FS_M, KT_MUT);
+                hr_tcm(855, 402, "(.a26, .bin, .rom o .zip) y vuelve a entrar aquí.", FS_M, KT_MUT);
                 kt_hints(hh0, 1, 533, 636);
             } else {
                 static const char *const dm[1] = { 0 };
@@ -7788,7 +7907,7 @@ static int ui_menu(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.2.0", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         if (g_rom) {
             fit_name(nm, sizeof nm, g_rom_name, 34);
@@ -7844,7 +7963,7 @@ static int ui_menu4(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.2.0", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
         ui_center(46, "MULTIJUGADOR DE 4 (FOUR SCORE)", 1, 0xFFC0C0FF);
         ui_center(66, "HOST: MANDOS 1 Y 2", 1, 0xFF80FF80);
         ui_center(80, "EL QUE SE UNE: MANDOS 3 Y 4", 1, 0xFF80FF80);
@@ -7918,7 +8037,7 @@ static int ui_enter_code(char *out)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.2.0", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
         ui_center(60, "ESCRIBE EL CODIGO DEL HOST", 1, 0xFFFFFFFF);
         for (i = 0; i < 10; i++) {
             char c[2] = { (char)('0' + d[i]), 0 };
@@ -8024,7 +8143,7 @@ static int run_host_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.2.0", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
         ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -8175,7 +8294,7 @@ static int run_host4_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.2.0", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
         ui_center(64, "SALA DE 4 - TU CODIGO:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -8281,7 +8400,7 @@ static void app_prepare(const char *argv0)
         rename(p, q);                     /* conserva el log de la vez anterior */
         g_log = fopen(p, "w");
     }
-    logf_("Katari v0.2.0 (Atari 2600, nucleo Stella 2014 con recorte automatico de la barra negra HMOVE; menus nuevos con madera; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
+    logf_("Katari v0.2.1 (Atari 2600, nucleo Stella 2014 con recorte automatico de la barra negra HMOVE; menus nuevos con madera; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
     cfg_load();
     logf_("config: res=%d render=%s zoom=%d audio=%s", g_cfg.res, g_cfg.render ? "cpu" : "gpu", g_cfg.zoom, g_cfg.audio ? "on" : "off");
     opts_load();                          /* v1.8.2: pantalla y mandos guardados en opciones.txt */
@@ -8419,7 +8538,7 @@ int main(int argc, char **argv)
         static const char *items[3] = { "CREAR SALA (HOST)", "UNIRSE A UNA SALA", "SOLO - 2 MANDOS" };
         int i;
         ui_clear();
-        ui_center(20, "KATARI V0.2.0", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         for (i = 0; i < 3; i++) {
             char line[40];
@@ -8432,7 +8551,7 @@ int main(int argc, char **argv)
             code_encode(((uint32_t)181 << 24) | (45u << 16) | (200u << 8) | 17u, 7777, code);
             if (hr_usable()) hr_room_screen("SALA DE 4 (HOST)", code, "puerto 7777", "UPNP: PUERTO ABIERTO", 0xFF80FF80u); else {
             ui_clear();
-            ui_center(20, "KATARI V0.2.0", 2, 0xFFFFD040);
+            ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
             ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
             { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
             ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -8482,7 +8601,7 @@ int main(int argc, char **argv)
     }
     snprintf(g_cfg.rom, sizeof g_cfg.rom, "%s", argv[1]);
     g_cfg.port = port;
-    if (!read_whole_file(argv[1], &g_rom, &g_romsz)) { fprintf(stderr, "no puedo leer la ROM\n"); return 2; }
+    if (!read_rom_file(argv[1], &g_rom, &g_romsz, NULL, 0)) { fprintf(stderr, "no puedo leer la ROM\n"); return 2; }
     g_romcrc = crc32_buf(g_rom, g_romsz);
     snprintf(g_dir, sizeof g_dir, "/tmp");
     if (getenv("NESNET_DIR")) snprintf(g_dir, sizeof g_dir, "%s", getenv("NESNET_DIR"));   /* prueba v1.9.2: carpeta propia (con roms/) por proceso */
