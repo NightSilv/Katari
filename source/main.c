@@ -1,5 +1,5 @@
 /*
- * Katari v0.2.1 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9; menus nuevos con fondo de madera)
+ * Katari v0.2.2 - emulador de Atari 2600 con netplay para PS3 (basado en NesNet v1.9.9; menus nuevos con fondo de madera)
  *   PSL1GHT + nucleo libretro Stella 2014
  *
  * Netplay: lockstep con retraso fijo (delay) sobre TCP, 2 jugadores.
@@ -316,7 +316,7 @@ static const uint8_t font5x7[59][5] = {
 #define HC_YEL   0xFFFFE246u
 #define HC_MUTE  0xFF6E7CAAu
 #define HC_SHAD  0xFF02040Eu
-/* ---- Katari v0.2.1: fuentes Archivo Black (titulos) y Fira Sans (texto), licencia OFL, 11 tamanos, alfa de 4 bits, generadas fuera de la PS3 ---- */
+/* ---- Katari v0.2.2: fuentes Archivo Black (titulos) y Fira Sans (texto), licencia OFL, 11 tamanos, alfa de 4 bits, generadas fuera de la PS3 ---- */
 typedef struct { uint16_t cp; uint8_t adv; int8_t bx, by; uint8_t w, h; uint32_t off; } FGlyph;
 enum { FS_S, FS_M, FS_L, FS_V, FS_B, FS_T, FS_R, FS_H, FS_Q, FS_C, FS_X, FS_N };
 static const int fg_asc[FS_N] = { 16, 18, 21, 25, 18, 22, 27, 41, 46, 57, 65 };
@@ -2628,7 +2628,7 @@ static void hr_b64(void)
     }
 }
 
-/* ---- Katari v0.2.1: fondo de MADERA veteada (como la caja de la consola) armado una sola vez ---- */
+/* ---- Katari v0.2.0: fondo de MADERA veteada (como la caja de la consola) armado una sola vez ---- */
 static void hr_make_bg(void)
 {
     static float rt[1024];                      /* anillos de la veta: (sin * 0.5 + 0.5) ^ 2.6 */
@@ -2956,6 +2956,17 @@ static void kt_hints(const HHint *h, int n, int x, int ym)
         x += hr_tm(x, ym, h[i].t, FS_L, KT_CREAM) + 80;
     }
 }
+
+/* hints centrados en cx (ancho calculado), con el mismo estilo de kt_hints */
+static void kt_hints_c(const HHint *h, int n, int cx, int ym)
+{
+    int i, tot = 0;
+    for (i = 0; i < n; i++) {
+        int tw = hr_tw(h[i].b, FS_B);
+        tot += (tw > 18 ? tw + 24 : 34) + 10 + hr_tw(h[i].t, FS_L) + (i + 1 < n ? 80 : 0);
+    }
+    kt_hints(h, n, cx - tot / 2, ym);
+}
 static void hr_hints(const HHint *h, int n) { kt_hints(h, n, 533, 636); }
 
 /* ---- placa del logo (izquierda arriba): titulo grande, linea, subtitulo ---- */
@@ -2990,7 +3001,7 @@ static void kt_head(const char *title, const char *sub, const char *sub2)
     if (sub2) hr_tt(68, 256, sub2, FS_S, KT_MUT);
 }
 
-static void kt_ver(void) { hr_tt(72, 598, "versión 0.2.1", FS_S, 0xFF827660u); }
+static void kt_ver(void) { hr_tt(72, 598, "versión 0.2.2", FS_S, 0xFF827660u); }
 
 /* interruptor deslizable (adorno de las filas y de la placa de info) */
 static void kt_switch(int sx, int sy, int w, int h, int on, int sel)
@@ -5895,12 +5906,11 @@ static int solo_menu_inner(int online, int host)
                 if (m3) hr_tcm(640, 366, m3, FS_M, KT_MUT);
                 kt_row(362, 430, 918, 492, "SÍ", NULL, NULL, 0, 1);
                 kt_row(362, 500, 918, 562, "NO", NULL, NULL, 0, 0);
-                hr_tcm(640, 632, "X sí  ·  O no", FS_M, KT_MUT);
+                kt_hints_c(hc, 2, 640, 618);
             } else {
                 const char *rows[6], *vals[6];
                 char rl[6][48], rv[6][24];
-                const char *hl = NULL;
-                for (i = 0; i < nk; i++) {
+                                for (i = 0; i < nk; i++) {
                     rv[i][0] = 0;
                     switch (kinds[i]) {
                     case MK_CONT:  snprintf(rl[i], sizeof rl[i], "CONTINUAR"); break;
@@ -5913,14 +5923,16 @@ static int solo_menu_inner(int online, int host)
                     rows[i] = rl[i]; vals[i] = rv[i][0] ? rv[i] : NULL;
                 }
                 hr_tcm(640, 112, "PAUSA", FS_H, KT_AMB);
-                hr_tcm(640, 150, online ? "1 vs 1 en línea" : "Dos mandos locales", FS_M, KT_MUT);
+                hr_tcm(640, 150, online ? "1 vs 1 en línea · reiniciar y salir son para los dos" : "Dos mandos locales", FS_M, KT_MUT);
                 for (i = 0; i < nk; i++) kt_row(362, 172 + i * 70, 918, 172 + i * 70 + 62, rows[i], NULL, vals[i], 0, i == sel);
-                if (kinds[sel] == MK_SAVE || kinds[sel] == MK_LOAD) hl = "IZQ / DER cambia de ranura";
-                else if (online && kinds[sel] == MK_GAME) hl = "Se le pregunta antes a tu amigo";
-                else if (online) hl = "Reiniciar y salir: para los dos";
-                else hl = "X elegir  ·  O volver al juego";
-                if (note) hr_tcm(640, 632, "Esa ranura está vacía", FS_M, KT_AMB);
-                else if (hl) hr_tcm(640, 632, hl, FS_M, KT_MUT);
+                if (note) hr_tcm(640, 618, "Esa ranura está vacía", FS_L, KT_AMB);
+                else if (kinds[sel] == MK_SAVE || kinds[sel] == MK_LOAD) {
+                    static const HHint hr3s[3] = { { "<>", "RANURA", HC_BG }, { "X", "ELEGIR", HC_BX }, { "O", "VOLVER AL JUEGO", HC_BO } };
+                    kt_hints_c(hr3s, 3, 640, 618);
+                } else {
+                    static const HHint hr3[2] = { { "X", "ELEGIR", HC_BX }, { "O", "VOLVER AL JUEGO", HC_BO } };
+                    kt_hints_c(hr3, 2, 640, 618);
+                }
             }
         } else if (confirm >= 0) {
             char l[40];
@@ -6705,7 +6717,7 @@ static void ui_show(const char *l1, const char *l2, const char *l3)
         return;
     }
     ui_clear();
-    ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
+    ui_center(20, "KATARI V0.2.2", 2, 0xFFFFD040);
     if (l1) ui_center(90, l1, 1, 0xFFFFFFFF);
     if (l2) ui_center(110, l2, 1, 0xFFC0C0FF);
     if (l3) ui_center(130, l3, 1, 0xFFC0C0FF);
@@ -7446,7 +7458,7 @@ static void ui_opt_screen(void)
         if (hr_usable()) {
             static const HHint hh[2] = { { "X", "VOLVER", HC_BX }, { "O", "VOLVER", HC_BO } };
             kt_head("PANTALLA", "SOLO LA IMAGEN DEL JUEGO", "No cambia nada del juego");
-            kt_note("ARRIBA / ABAJO elige", "X u O vuelve", NULL, NULL);
+            kt_note("ARRIBA / ABAJO elige", NULL, NULL, NULL);
             {
                 static const char *const dk[3] = { "Píxeles cuadrados (como siempre)", "Proporción de TV 4:3", "Estirada a pantalla ancha 16:9" };
                 kt_vlist(screen_names, dk, NULL, 3, g_screen, 76, 100);
@@ -7563,7 +7575,7 @@ static void ui_opt_pads(void)
             static const HHint hh[2] = { { "X", "ENTRAR", HC_BX }, { "O", "VOLVER", HC_BO } };
             static const char *const dd[4] = { "Botones y turbo del mando 1", "Botones y turbo del mando 2", "Deja los dos como al inicio", "Regresa a opciones" };
             kt_head("MANDOS", "BOTONES Y TURBO", "Vale para SOLO y 1 vs 1");
-            kt_note("ARRIBA / ABAJO + X", NULL, NULL, NULL);
+            kt_note("ARRIBA / ABAJO elige", NULL, NULL, NULL);
             kt_vlist(items, dd, NULL, 4, sel, 76, 100);
             hr_hints(hh, 2);
             present();
@@ -7837,7 +7849,7 @@ static void ui_options(void)
             vv[0] = screen_names[g_screen]; vv[1] = ">"; vv[2] = v4; vv[3] = ">"; vv[4] = ">"; vv[5] = g_showfps ? "SÍ" : "NO"; vv[6] = NULL;
             (void)fps; (void)val; (void)items;
             kt_head("OPCIONES", "AJUSTES DE KATARI", "Pantalla, imagen, mandos y sonido");
-            kt_note("IZQ / DER cambia el valor", "X entra en submenús", NULL, NULL);
+            kt_note("IZQ / DER cambia el valor", "ELEGIR entra al submenú", NULL, NULL);
             kt_vlist(ti, ds, vv, 7, sel, 56, 80);
             hr_hints(hh, 2);
             present();
@@ -7907,7 +7919,7 @@ static int ui_menu(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.2", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         if (g_rom) {
             fit_name(nm, sizeof nm, g_rom_name, 34);
@@ -7963,7 +7975,7 @@ static int ui_menu4(void)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.2", 2, 0xFFFFD040);
         ui_center(46, "MULTIJUGADOR DE 4 (FOUR SCORE)", 1, 0xFFC0C0FF);
         ui_center(66, "HOST: MANDOS 1 Y 2", 1, 0xFF80FF80);
         ui_center(80, "EL QUE SE UNE: MANDOS 3 Y 4", 1, 0xFF80FF80);
@@ -8037,7 +8049,7 @@ static int ui_enter_code(char *out)
             continue;
         }
         ui_clear();
-        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.2", 2, 0xFFFFD040);
         ui_center(60, "ESCRIBE EL CODIGO DEL HOST", 1, 0xFFFFFFFF);
         for (i = 0; i < 10; i++) {
             char c[2] = { (char)('0' + d[i]), 0 };
@@ -8143,7 +8155,7 @@ static int run_host_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.2", 2, 0xFFFFD040);
         ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -8294,7 +8306,7 @@ static int run_host4_inner(void)
             present();
         } else {
         ui_clear();
-        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.2", 2, 0xFFFFD040);
         ui_center(64, "SALA DE 4 - TU CODIGO:", 1, 0xFFFFFFFF);
         { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
         ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
@@ -8400,7 +8412,7 @@ static void app_prepare(const char *argv0)
         rename(p, q);                     /* conserva el log de la vez anterior */
         g_log = fopen(p, "w");
     }
-    logf_("Katari v0.2.1 (Atari 2600, nucleo Stella 2014 con recorte automatico de la barra negra HMOVE; menus nuevos con madera; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
+    logf_("Katari v0.2.2 (Atari 2600, nucleo Stella 2014 con recorte automatico de la barra negra HMOVE; menus nuevos con madera; solo 1 vs 1 online; base NesNet v1.9.9: menus 1280x720, caratulas, R3 = menu en partida, L2 = captura, 6 ranuras de estado, estados online del host) - dir=%s", g_dir);
     cfg_load();
     logf_("config: res=%d render=%s zoom=%d audio=%s", g_cfg.res, g_cfg.render ? "cpu" : "gpu", g_cfg.zoom, g_cfg.audio ? "on" : "off");
     opts_load();                          /* v1.8.2: pantalla y mandos guardados en opciones.txt */
@@ -8538,7 +8550,7 @@ int main(int argc, char **argv)
         static const char *items[3] = { "CREAR SALA (HOST)", "UNIRSE A UNA SALA", "SOLO - 2 MANDOS" };
         int i;
         ui_clear();
-        ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
+        ui_center(20, "KATARI V0.2.2", 2, 0xFFFFD040);
         ui_center(46, "ATARI 2600 CON NETPLAY PARA PS3", 1, 0xFFC0C0FF);
         for (i = 0; i < 3; i++) {
             char line[40];
@@ -8551,7 +8563,7 @@ int main(int argc, char **argv)
             code_encode(((uint32_t)181 << 24) | (45u << 16) | (200u << 8) | 17u, 7777, code);
             if (hr_usable()) hr_room_screen("SALA DE 4 (HOST)", code, "puerto 7777", "UPNP: PUERTO ABIERTO", 0xFF80FF80u); else {
             ui_clear();
-            ui_center(20, "KATARI V0.2.1", 2, 0xFFFFD040);
+            ui_center(20, "KATARI V0.2.2", 2, 0xFFFFD040);
             ui_center(64, "TU CODIGO DE SALA:", 1, 0xFFFFFFFF);
             { char pc[24]; code_pretty(code, pc); ui_center(84, pc, 2, 0xFFFFFF40); }
             ui_center(116, "DASELO A TU AMIGO", 1, 0xFFC0C0FF);
